@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>哦鲸鲸 · LIVE</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #04070F; overflow: hidden; }
+  #viewport { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #04070F; }
+  #stage {
+    position: relative; flex: 0 0 auto; width: 1080px; height: 1920px; overflow: hidden;
+    transform-origin: center center;
+    background: radial-gradient(120% 78% at 50% 16%, #1A3E72 0%, #0D2344 44%, #071429 74%, #04070F 100%);
+  }
+  .halo {
+    position: absolute; left: 50%; top: 640px; width: 1200px; height: 1200px;
+    margin-left: -600px; margin-top: -600px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(92,182,255,.30) 0%, rgba(64,140,255,.10) 44%, rgba(0,0,0,0) 70%);
+    filter: blur(8px); animation: halo 5.2s ease-in-out infinite;
+  }
+  @keyframes halo { 0%,100% { transform: scale(1); opacity: .82 } 50% { transform: scale(1.06); opacity: 1 } }
+
+  /* 素材是 640×360 的宽画幅，角色只占中间约 1/3 宽；放大到 2400px 宽后再居中裁切，角色才够大 */
+  .petbox { position: absolute; inset: 0; overflow: hidden; }
+  .petbox video {
+    position: absolute; left: 50%; top: -60px; width: 2400px; height: 1350px;
+    margin-left: -1200px; object-fit: contain;
+    opacity: 0; transition: opacity .24s ease; will-change: opacity;
+  }
+  .petbox video.on { opacity: 1; }
+
+  .fx-flash { position: absolute; inset: 0; background: #9ED8FF; opacity: 0; pointer-events: none; mix-blend-mode: screen; }
+  .fx-flash.go { animation: flash .55s ease-out; }
+  @keyframes flash { 0% { opacity: .45 } 100% { opacity: 0 } }
+
+  .fx-tag {
+    position: absolute; top: 78px; left: 50%; padding: 14px 36px; border-radius: 999px;
+    transform: translateX(-50%) scale(.9); opacity: 0; transition: opacity .28s ease, transform .28s ease;
+    font: 700 34px/1 "Microsoft YaHei", sans-serif; letter-spacing: 2px; color: #DFF1FF;
+    background: rgba(18,56,112,.55); border: 1px solid rgba(140,200,255,.45); backdrop-filter: blur(8px);
+  }
+  .fx-tag.on { opacity: 1; transform: translateX(-50%) scale(1); }
+
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <div class="halo"></div>
+    <div class="petbox">
+      <!-- 双层视频做交叉淡化：空闲循环与一次性动作互不闪白 -->
+      <video id="v0" muted playsinline preload="auto"></video>
+      <video id="v1" muted playsinline preload="auto"></video>
+    </div>
+    <div class="fx-flash" id="flash"></div>
+    <div class="fx-tag" id="tag"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const stage = document.getElementById('stage');
+  const vids = [document.getElementById('v0'), document.getElementById('v1')];
+  const flash = document.getElementById('flash');
+  const tag = document.getElementById('tag');
+
+
+  const FILES = {
+    idle: 'assets/idle.webm',
+    dance1: 'assets/dance1.webm',
+    dance2: 'assets/dance2.webm',
+    dance3: 'assets/dance3.webm',
+    firework: 'assets/firework.webm',
+    whale: 'assets/whale.webm',
+    smile: 'assets/smile.webm',
+    shy: 'assets/shy.webm',
+    angry: 'assets/angry.webm',
+    wave: 'assets/wave.webm',
+    tail: 'assets/tail.webm',
+    stretch: 'assets/stretch.webm',
+    yawn: 'assets/yawn.webm',
+    mirror: 'assets/mirror.webm',
+    maid: 'assets/maid.webm',
+    code: 'assets/code.webm',
+    snack: 'assets/snack.webm',
+    rice: 'assets/rice.webm',
+    gift: 'assets/gift.webm',
+    busy: 'assets/busy.webm',
+    sleep: 'assets/sleep.webm',
+    bubbles: 'assets/bubbles.webm'
+  };
+
+  /* ---------- 等比适配 1080×1920 ---------- */
+  function fit() {
+    const s = Math.min(window.innerWidth / 1080, window.innerHeight / 1920);
+    stage.style.transform = 'scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  /* ---------- 视频交叉淡化 ---------- */
+  let cur = 0;
+  let acting = false;
+  let actionTimer = null;
+  let tagTimer = null;
+
+  function curKey() { return vids[cur].dataset.key || ''; }
+
+  function cross(key, loop) {
+    const next = vids[1 - cur];
+    if (next.dataset.key !== key) {
+      next.dataset.key = key;
+      next.src = FILES[key];
+    }
+    next.loop = !!loop;
+    next.onerror = function () { console.warn('视频加载失败：' + key); };
+    const p = next.play();
+    if (p && p.catch) p.catch(function () {});
+    next.classList.add('on');
+    vids[cur].classList.remove('on');
+    cur = 1 - cur;
+  }
+
+  function backToIdle() {
+    acting = false;
+    clearTimeout(actionTimer);
+    if (curKey() !== 'idle') cross('idle', true);
+  }
+
+  function showTag(label) {
+    tag.textContent = label;
+    tag.classList.add('on');
+    clearTimeout(tagTimer);
+    tagTimer = setTimeout(function () { tag.classList.remove('on'); }, 1800);
+  }
+
+  function playAction(key, opt) {
+    if (!FILES[key]) return;
+    opt = opt || {};
+    clearTimeout(actionTimer);
+    acting = true;
+    cross(key, false);
+    const v = vids[cur];
+    v.onended = function () {
+      v.onended = null;
+      if (!opt.loopSec) backToIdle();
+    };
+    if (opt.loopSec) {
+      v.loop = true;
+      actionTimer = setTimeout(backToIdle, opt.loopSec * 1000);
+    }
+    if (opt.flash) {
+      flash.classList.remove('go');
+      void flash.offsetWidth;
+      flash.classList.add('go');
+    }
+    if (opt.tag) showTag(opt.tag);
+  }
+
+  /* ---------- dsh-pet 式随机动作链 ---------- */
+  const POOLS = [
+    { w: 10, keys: [] },                                                        // 空闲：什么都不做
+    { w: 22, keys: ['yawn', 'stretch', 'mirror', 'maid', 'tail', 'code', 'busy'] }, // 小动作
+    { w: 24, keys: ['bubbles', 'whale', 'dance1', 'dance2', 'dance3', 'gift', 'firework'] }, // 玩耍
+    { w: 16, keys: ['snack', 'rice'] },                                         // 吃什么
+    { w: 14, keys: ['firework', 'gift'] }                                       // 时节
+  ];
+
+  function pickKeys() {
+    const total = POOLS.reduce(function (a, p) { return a + p.w; }, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < POOLS.length; i++) {
+      r -= POOLS[i].w;
+      if (r <= 0) return POOLS[i].keys;
+    }
+    return [];
+  }
+
+  function randomKey(list) {
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  function idleChain() {
+    if (!acting) {
+      const keys = pickKeys();
+      if (keys.length) playAction(randomKey(keys));
+    }
+    setTimeout(idleChain, 7000 + Math.random() * 9000);
+  }
+
+  /* ---------- 弹幕指令 → 特效 ---------- */
+  const COMMANDS = [
+    { re: /放烟花|烟花/, keys: ['firework'], tag: '放烟花', flash: true },
+    { re: /跳舞|跳个舞|来段舞/, keys: ['dance1', 'dance2', 'dance3'], tag: '跳舞', flash: true },
+    { re: /女仆/, keys: ['maid'], tag: '女仆礼仪' },
+    { re: /睡觉|睡吧|晚安/, keys: ['sleep'], tag: '睡着了', loopSec: 20 },
+    { re: /蓝鲸|大鲸鱼|鲸鱼/, keys: ['whale'], tag: '蓝鲸现世', flash: true },
+    { re: /泡泡/, keys: ['bubbles'], tag: '吐泡泡' },
+    { re: /伸懒腰|懒腰/, keys: ['stretch'], tag: '伸懒腰' },
+    { re: /吃|饿|干饭/, keys: ['snack', 'rice'], tag: '开吃' },
+    { re: /哈欠|困了/, keys: ['yawn'], tag: '打哈欠' },
+    { re: /生气|傲娇|凶/, keys: ['angry'], tag: '生气了' },
+    { re: /害羞|抱抱|亲亲/, keys: ['shy'], tag: '害羞' },
+    { re: /开心|好耶|高兴/, keys: ['smile'], tag: '开心' },
+    { re: /挥手|你好|打招呼/, keys: ['wave'], tag: '打招呼' },
+    { re: /镜子/, keys: ['mirror'], tag: '照镜子' },
+    { re: /礼物|拆/, keys: ['gift'], tag: '拆礼物', flash: true },
+    { re: /代码|bug|Bug/, keys: ['code'], tag: '写代码' },
+    { re: /尾巴/, keys: ['tail'], tag: '尾巴拍地' },
+    { re: /上班|工作|忙/, keys: ['busy'], tag: '忙碌中' }
+  ];
+
+  function matchCommand(raw) {
+    const t = String(raw || '').replace(/^[\s#/／]+/, '');
+    if (!t) return null;
+    for (let i = 0; i < COMMANDS.length; i++) {
+      if (COMMANDS[i].re.test(t)) return COMMANDS[i];
+    }
+    return null;
+  }
+
+  function runCommand(c) {
+    playAction(randomKey(c.keys), { flash: c.flash, tag: c.tag, loopSec: c.loopSec });
+  }
+
+  function hitReaction() {
+    playAction(randomKey(['smile', 'shy', 'angry', 'wave']));
+  }
+
+  /* ---------- 收到新回复 → 触发动作 ---------- */
+  let lastTs = 0;
+
+  function render(feed) {
+    const events = (feed && feed.events) || [];
+    const latest = events[events.length - 1];
+    if (!latest || !latest.ts || latest.ts <= lastTs) return;
+    lastTs = latest.ts;
+
+    const cmd = matchCommand(latest.text);
+    if (cmd) runCommand(cmd);
+    else if (!acting) hitReaction();
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/feed', { cache: 'no-store' });
+      if (r.ok) render(await r.json());
+    } catch (e) { /* 服务重启时静默重试 */ }
+  }
+
+  /* ---------- 点击主播 → 随机回应 ---------- */
+  let lastTap = 0;
+  stage.addEventListener('click', function () {
+    const now = Date.now();
+    if (now - lastTap < 2500) return;
+    lastTap = now;
+    hitReaction();
+  });
+
+  /* ---------- 启动 ---------- */
+  vids[0].dataset.key = 'idle';
+  vids[0].src = FILES.idle;
+  vids[0].loop = true;
+  vids[0].classList.add('on');
+  const first = vids[0].play();
+  if (first && first.catch) first.catch(function () {});
+
+  idleChain();
+  poll();
+  setInterval(poll, 900);
+
+  // 便于本地联调：stageAPI.playAction('whale',{tag:'蓝鲸现世',flash:true})
+  window.stageAPI = { playAction: playAction, runCommand: runCommand, keys: FILES };
+})();
+</script>
+</body>
+</html>
